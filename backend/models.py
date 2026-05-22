@@ -102,6 +102,7 @@ class User(db.Model, SoftDeleteMixin):
 
     # OAuth fields
     google_id = db.Column(db.String(255), unique=True, nullable=True)
+    firebase_uid = db.Column(db.String(255), unique=True, nullable=True)
 
     auth_provider = db.Column(
         db.String(50),
@@ -123,6 +124,7 @@ class User(db.Model, SoftDeleteMixin):
             "id": self.id,
             "username": self.username,
             "email": self.email,
+            "firebase_uid": self.firebase_uid,
             "auth_provider": self.auth_provider,
             "profile_picture": self.profile_picture,
             "email_verified": self.email_verified,

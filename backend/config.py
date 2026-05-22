@@ -166,7 +166,9 @@ class GoogleOAuthConfig:
             redirect_uri=os.getenv('GOOGLE_OAUTH_REDIRECT_URI'),
             frontend_redirect_url=os.getenv('FRONTEND_URL', 'http://127.0.0.1:5500/frontend/pages/library.html'),
             scope=os.getenv('GOOGLE_OAUTH_SCOPE', 'openid email profile')
-          
+        )
+    
+@dataclass
 class EmailConfig:
     """Email service configuration (e.g., SendGrid, Mailgun)."""
     api_key: Optional[str]
@@ -223,6 +225,30 @@ class RedisConfig:
         )
 
 
+@dataclass
+class FirebaseConfig:
+    """Firebase Configuration."""
+    api_key: Optional[str]
+    auth_domain: Optional[str]
+    project_id: Optional[str]
+    storage_bucket: Optional[str]
+    messaging_sender_id: Optional[str]
+    app_id: Optional[str]
+    credentials_json: Optional[str]
+
+    @classmethod
+    def from_env(cls) -> 'FirebaseConfig':
+        return cls(
+            api_key=os.getenv('FIREBASE_API_KEY'),
+            auth_domain=os.getenv('FIREBASE_AUTH_DOMAIN'),
+            project_id=os.getenv('FIREBASE_PROJECT_ID'),
+            storage_bucket=os.getenv('FIREBASE_STORAGE_BUCKET'),
+            messaging_sender_id=os.getenv('FIREBASE_MESSAGING_SENDER_ID'),
+            app_id=os.getenv('FIREBASE_APP_ID'),
+            credentials_json=os.getenv('FIREBASE_CREDENTIALS_JSON')
+        )
+
+
 class Config:
     """Base configuration class."""
     
@@ -237,6 +263,7 @@ class Config:
         self.redis = RedisConfig.from_env()
         self.email = EmailConfig.from_env()
         self.storage = StorageConfig.from_env()
+        self.firebase = FirebaseConfig.from_env()
         
         # Additional Flask configuration
         self.flask_config = self._get_flask_config()
@@ -248,7 +275,7 @@ class Config:
             'JWT_SECRET_KEY': self.jwt.secret_key,
             'JWT_ACCESS_TOKEN_EXPIRES': self.jwt.access_token_expires,
             'JWT_ALGORITHM': self.jwt.algorithm,
-            'JWT_TOKEN_LOCATION': ['cookies'],
+            'JWT_TOKEN_LOCATION': ['headers', 'cookies'],
             'JWT_COOKIE_CSRF_PROTECT': True,
             'JWT_ACCESS_COOKIE_PATH': '/',
             'JWT_COOKIE_HTTPONLY': True,

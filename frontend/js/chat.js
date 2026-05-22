@@ -201,20 +201,23 @@ Tell me: what is stirring in you today?`,
         this.scrollToBottom();
     }
 
+    _getAuthToken() {
+        if (typeof SafeStorage !== 'undefined') return SafeStorage.get('bibliodrift_token') || '';
+        return localStorage.getItem('bibliodrift_token') || '';
+    }
+
     async getBooksellerResponse(userMessage) {
         // First, try to use the dedicated chat endpoint
         try {
             const moodApiBase = window.MOOD_API_BASE || '/api/v1';
+            const token = this._getAuthToken();
+            const chatHeaders = { 'Content-Type': 'application/json' };
+            if (token) chatHeaders['Authorization'] = 'Bearer ' + token;
             const chatResponse = await fetch(`${moodApiBase}/chat`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: chatHeaders,
                 body: JSON.stringify({
                     message: userMessage,
-                    // Send token-budget-trimmed history so the backend receives
-                    // only what fits in the context window. The backend also
-                    // trims independently, but trimming here reduces payload size.
                     history: this._buildTokenBudgetHistory(userMessage)
                 })
             });
@@ -237,11 +240,12 @@ Tell me: what is stirring in you today?`,
         // Fallback to mood search
         try {
             const moodApiBase = window.MOOD_API_BASE || '/api/v1';
+            const token = this._getAuthToken();
+            const moodHeaders = { 'Content-Type': 'application/json' };
+            if (token) moodHeaders['Authorization'] = 'Bearer ' + token;
             const moodResponse = await fetch(`${moodApiBase}/mood-search`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: moodHeaders,
                 body: JSON.stringify({
                     query: userMessage
                 })
@@ -893,6 +897,7 @@ Tell me: what is stirring in you today?`,
 
     async addToLibrary(book) {
         try {
+            // Resolve current user from SafeStorage (set on DOMContentLoaded below)
             const user = window.currentUser || null;
             if (!user) {
                 alert('Sign in to add books to your library.');
@@ -904,13 +909,17 @@ Tell me: what is stirring in you today?`,
                 google_books_id: book.id,
                 title: book.volumeInfo?.title || '',
                 authors: book.volumeInfo?.authors || [],
-                thumbnail: book.volumeInfo?.imageLinks?.thumbnail || '' ,
+                thumbnail: book.volumeInfo?.imageLinks?.thumbnail || '',
                 shelf_type: 'owned'
             };
 
+            const token = this._getAuthToken();
+            const libHeaders = { 'Content-Type': 'application/json' };
+            if (token) libHeaders['Authorization'] = 'Bearer ' + token;
+
             const resp = await fetch((window.MOOD_API_BASE || '/api/v1') + '/library', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: libHeaders,
                 body: JSON.stringify(payload),
                 credentials: 'include'
             });
@@ -973,5 +982,14 @@ function closeBookModal() {
 
 // Initialize chat interface when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    // Populate window.currentUser from SafeStorage so addToLibrary works
+    try {
+        const userStr = typeof SafeStorage !== 'undefined'
+            ? SafeStorage.get('bibliodrift_user')
+            : localStorage.getItem('bibliodrift_user');
+        if (userStr) window.currentUser = JSON.parse(userStr);
+    } catch (e) {
+        window.currentUser = null;
+    }
     window.chatInterface = new ChatInterface();
 });

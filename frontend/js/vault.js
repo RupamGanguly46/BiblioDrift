@@ -145,8 +145,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function syncDocumentToFlaskCloud(docModel) {
         const mockGoogleBooksId = "vault_" + Math.random().toString(36).substring(2, 11);
         
+        let userId = "1002";
+        try {
+            const userStr = typeof SafeStorage !== 'undefined' ? SafeStorage.get('bibliodrift_user') : localStorage.getItem('bibliodrift_user');
+            if (userStr) {
+                const userObj = JSON.parse(userStr);
+                if (userObj && userObj.id) {
+                    userId = userObj.id;
+                }
+            }
+        } catch (e) {
+            console.error("Error parsing user from SafeStorage:", e);
+        }
+
         const syncPayload = {
-            user_id: localStorage.getItem('bibliodrift_user_id') || "1002", 
+            user_id: userId, 
             google_books_id: mockGoogleBooksId,
             title: docModel.name,
             authors: ["Local Vault Repository Submitter"],
@@ -157,7 +170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             privacy: docModel.privacy
         };
 
-        const activeJwtToken = localStorage.getItem('bibliodrift_access_token');
+        const activeJwtToken = typeof SafeStorage !== 'undefined' ? SafeStorage.get('bibliodrift_token') : localStorage.getItem('bibliodrift_token');
 
         try {
             const response = await fetch((window.VAULT_API_BASE || window.MOOD_API_BASE || 'http://127.0.0.1:5001/api/v1') + '/library', {

@@ -108,8 +108,18 @@ async function loadConfig() {
                     data.google_books_key_secondary,
                 ]);
             }
+            window.firebaseConfigured = !!data.firebase_configured;
+            window.firebaseConfig = data.firebase_config || null;
+            if (window.firebaseConfigured && window.firebaseConfig && typeof firebase !== 'undefined') {
+                if (firebase.apps.length === 0) {
+                    firebase.initializeApp(window.firebaseConfig);
+                    if (IS_DEV) {
+                        console.log('Firebase initialized successfully.');
+                    }
+                }
+            }
             if (IS_DEV) {
-                console.log('Config loaded');
+                console.log('Config loaded', data);
             }
         }
     } catch (e) {
@@ -123,6 +133,10 @@ const CollectionAPI = {
         const csrf = getCookie('csrf_access_token');
         if (csrf) {
             headers['X-CSRF-TOKEN'] = csrf;
+        }
+        const token = SafeStorage.get('bibliodrift_token');
+        if (token) {
+            headers['Authorization'] = 'Bearer ' + token;
         }
         return headers;
     },
@@ -514,6 +528,7 @@ const SafeStorage = {
         }
     },
 };
+window.SafeStorage = SafeStorage;
 const MOCK_BOOKS = [
     {
         id: "mock-dune",
@@ -1887,6 +1902,10 @@ class LibraryManager {
         if (csrfToken) {
             headers['X-CSRF-TOKEN'] = csrfToken;
         }
+        const token = SafeStorage.get('bibliodrift_token');
+        if (token) {
+            headers['Authorization'] = 'Bearer ' + token;
+        }
         return new Headers(headers);
     }
 
@@ -2874,6 +2893,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const authBtn = document.getElementById('submitBtn');
     const authForm = document.getElementById('authForm');
     const nameField = document.getElementById('nameField');
+    const googleAuthBtn = document.getElementById('googleAuthBtn');
+    const passwordInput = document.getElementById('password');
 
     if (toggleLink && authTitle && authBtn && authForm) {
         let isLogin = true;
@@ -2889,6 +2910,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 authBtn.textContent = 'Sign Up';
                 toggleLink.textContent = 'Already have an account? Sign in.';
                 if (nameField) nameField.style.display = 'block';
+                if (googleAuthBtn) googleAuthBtn.querySelector('span').textContent = 'Sign up with Google';
+                if (passwordInput) passwordInput.autocomplete = 'new-password';
             } else {
                 // Switch to Login Mode
                 authForm.dataset.mode = 'login';
@@ -2896,6 +2919,70 @@ document.addEventListener('DOMContentLoaded', async () => {
                 authBtn.textContent = 'Sign In';
                 toggleLink.textContent = 'No account? Create one.';
                 if (nameField) nameField.style.display = 'none';
+                if (googleAuthBtn) googleAuthBtn.querySelector('span').textContent = 'Sign in with Google';
+                if (passwordInput) passwordInput.autocomplete = 'current-password';
+            }
+        });
+    }
+
+    if (googleAuthBtn && authForm) {
+        googleAuthBtn.addEventListener('click', async () => {
+            const mode = authForm.dataset.mode || 'login';
+            googleAuthBtn.disabled = true;
+            
+            if (window.firebaseConfigured && typeof firebase !== 'undefined') {
+                googleAuthBtn.querySelector('span').textContent = 'Connecting with Google...';
+                try {
+                    const provider = new firebase.auth.GoogleAuthProvider();
+                    const result = await firebase.auth().signInWithPopup(provider);
+                    const idToken = await result.user.getIdToken();
+                    
+                    const csrfToken = document.getElementById('csrf_token')?.value;
+                    const fetchOptions = {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include',
+                        body: JSON.stringify({ idToken })
+                    };
+                    if (csrfToken) {
+                        fetchOptions.headers['X-CSRF-Token'] = csrfToken;
+                    }
+                    
+                    const res = await fetch(`${MOOD_API_BASE}/auth/firebase`, fetchOptions);
+                    const data = await res.json();
+                    
+                    if (res.ok && data.success) {
+                        SafeStorage.set('bibliodrift_user', JSON.stringify(data.user));
+                        SafeStorage.set('isLoggedIn', 'true');
+                        if (data.token) {
+                            SafeStorage.set('bibliodrift_token', data.token);
+                        }
+                        if (typeof showToast === 'function') {
+                            showToast(`Welcome back, ${data.user.username}!`, "success");
+                        }
+                        if (window.libManager) {
+                            await window.libManager.syncLocalToBackend(data.user);
+                        }
+                        setTimeout(() => {
+                            window.location.href = "library.html";
+                        }, 1000);
+                    } else {
+                        googleAuthBtn.disabled = false;
+                        googleAuthBtn.querySelector('span').textContent = mode === 'register' ? 'Sign up with Google' : 'Sign in with Google';
+                        if (typeof showToast === 'function') showToast(data.error || "Google auth exchange failed", "error");
+                    }
+                } catch (firebaseErr) {
+                    console.error("Firebase Google Auth failed:", firebaseErr);
+                    googleAuthBtn.disabled = false;
+                    googleAuthBtn.querySelector('span').textContent = mode === 'register' ? 'Sign up with Google' : 'Sign in with Google';
+                    if (typeof showToast === 'function') showToast(firebaseErr.message || "Google login failed", "error");
+                }
+            } else {
+                // Fall back to backend direct Google OAuth redirect
+                googleAuthBtn.querySelector('span').textContent = 'Redirecting to Google...';
+                window.location.href = `${MOOD_API_BASE}/auth/google?mode=${encodeURIComponent(mode)}`;
             }
         });
     }
@@ -3446,29 +3533,36 @@ async function handleAuth(event) {
         return;
     }
 
-    // Prepare Payload
-    let payload = {};
-    let endpoint = "";
-
-    if (mode === 'register') {
-        const username = usernameInput ? usernameInput.value : email.split('@')[0];
-        endpoint = '/register';
-        payload = { username, email, password };
+    let idToken = '';
+    
+    if (window.firebaseConfigured && typeof firebase !== 'undefined') {
+        try {
+            let userCredential;
+            if (mode === 'register') {
+                userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                const username = usernameInput ? usernameInput.value : email.split('@')[0];
+                if (userCredential.user) {
+                    await userCredential.user.updateProfile({ displayName: username });
+                }
+            } else {
+                userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
+            }
+            idToken = await userCredential.user.getIdToken();
+        } catch (firebaseError) {
+            console.error("Firebase auth failed:", firebaseError);
+            if (typeof showToast === 'function') {
+                showToast(firebaseError.message || "Firebase Auth failed", "error");
+            } else {
+                alert(firebaseError.message || "Firebase Auth failed");
+            }
+            resetBtn();
+            return;
+        }
     } else {
-        endpoint = '/login';
-        payload = { username: email, password: password };
+        // Mock Auth Mode
+        idToken = 'mock-firebase-token-' + email;
     }
 
-    // =========================================================================
-    // SECURITY ENHANCEMENT: CSRF TOKEN INTEGRATION
-    // =========================================================================
-    // We retrieve the CSRF token from the hidden input field 'csrf_token'.
-    // This token is then injected into the 'X-CSRF-Token' header. 
-    // The Flask-WTF backend expects this header for all state-changing
-    // AJAX requests. This protects against Cross-Site Request Forgery 
-    // by ensuring that the request is authenticated via the browser's 
-    // Same-Origin Policy and session-bound secrets.
-    // =========================================================================
     const csrfToken = document.getElementById('csrf_token')?.value;
 
     try {
@@ -3478,25 +3572,22 @@ async function handleAuth(event) {
                 'Content-Type': 'application/json'
             },
             credentials: 'include',
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ idToken })
         };
 
-        // Inject CSRF token into headers if available
         if (csrfToken) {
             fetchOptions.headers['X-CSRF-Token'] = csrfToken;
-        } else if (IS_DEV) {
-            console.warn('[Security] No CSRF token found in DOM. Request may be rejected by server.');
         }
 
-        const res = await fetch(`${MOOD_API_BASE}${endpoint.replace('/api/v1', '')}`, fetchOptions);
-
+        const res = await fetch(`${MOOD_API_BASE}/auth/firebase`, fetchOptions);
         const data = await res.json();
 
-        if (res.ok) {
-            // Success!
-            // Token is now in an HttpOnly cookie (managed by backend)
+        if (res.ok && data.success) {
             SafeStorage.set('bibliodrift_user', JSON.stringify(data.user));
             SafeStorage.set('isLoggedIn', 'true');
+            if (data.token) {
+                SafeStorage.set('bibliodrift_token', data.token);
+            }
 
             if (typeof showToast === 'function')
                 showToast(`${mode === 'login' ? 'Welcome back' : 'Welcome'}, ${data.user.username}!`, "success");
@@ -3512,7 +3603,6 @@ async function handleAuth(event) {
                 window.location.href = "library.html";
             }, 1000);
         } else {
-            // Authentication failed - re-enable button
             if (typeof showToast === 'function') showToast(data.error || "Authentication failed", "error");
             else alert(data.error || "Authentication failed");
             resetBtn();

@@ -312,6 +312,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="BiblioDrift">
     <link rel="apple-touch-icon" href="../assets/images/biblioDrift_favicon.png">
+    <!-- Firebase App (the core Firebase SDK) and Firebase Auth Compat SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 </head>
 
 <body class="auth-page">
@@ -386,46 +389,34 @@
                         <input type="password" id="password" class="auth-input" placeholder="Password" value="demo123" required autocomplete="current-password">
                     </div>
 
+                    <!-- 
+                        =============================================================
+                        SECURITY COMPLIANCE: CSRF TOKEN FIELD
+                        =============================================================
+                        This hidden input is dynamically populated with a one-time 
+                        security token provided by the backend. It protects against
+                        Cross-Site Request Forgery attacks by ensuring that the 
+                        form submission originated from this specific application 
+                        instance.
+                        =============================================================
+                    -->
+                    <input type="hidden" id="csrf_token" name="csrf_token" value="">
+
                     <button type="submit" id="submitBtn" class="auth-btn">
                         Sign In
                     </button>
                 </form>
 
-                <div class="auth-footer">
-                    <span id="toggleText" class="toggle-link">
-                        No account? Create one.
-                    </span>
-                </div>
-                
-                <!-- 
-                    =============================================================
-                    SECURITY COMPLIANCE: CSRF TOKEN FIELD
-                    =============================================================
-                    This hidden input is dynamically populated with a one-time 
-                    security token provided by the backend. It protects against
-                    Cross-Site Request Forgery attacks by ensuring that the 
-                    form submission originated from this specific application 
-                    instance.
-                    =============================================================
-                -->
-                <input type="hidden" id="csrf_token" name="csrf_token" value="">
-                
-                <!-- Primary Action Button -->
-                <button type="submit" id="submitBtn" class="auth-btn">
-                    Sign In
-                </button>
-
                 <button type="button" id="googleAuthBtn" class="google-auth-btn">
                     <i class="fa-brands fa-google"></i>
                     <span>Sign in with Google</span>
                 </button>
-            </form>
-            
-            <!-- Mode Toggle Link -->
-            <div class="auth-footer" style="margin-top: 1.5rem;">
-                <span id="toggleText" class="toggle-link">
-                    No account? Create one.
-                </span>
+                
+                <div class="auth-footer" style="margin-top: 1.5rem;">
+                    <span id="toggleText" class="toggle-link">
+                        No account? Create one.
+                    </span>
+                </div>
             </div>
         </section>
     </main>
@@ -486,47 +477,6 @@
     <script src="../js/footer.js"></script>
     <script src="../js/app.js"></script>
     <script src="../script/header-scroll.js"></script>
-    <script>
-        const toggleText = document.getElementById('toggleText');
-        const authForm = document.getElementById('authForm');
-        const authTitle = document.getElementById('authTitle');
-        const nameField = document.getElementById('nameField');
-        const submitBtn = document.getElementById('submitBtn');
-        const googleAuthBtn = document.getElementById('googleAuthBtn');
-
-        if (googleAuthBtn) {
-            googleAuthBtn.addEventListener('click', () => {
-                const mode = authForm.dataset.mode === 'register' ? 'register' : 'login';
-                googleAuthBtn.disabled = true;
-                googleAuthBtn.querySelector('span').textContent = 'Redirecting to Google...';
-                window.location.href = `${MOOD_API_BASE}/auth/google?mode=${encodeURIComponent(mode)}`;
-            });
-        }
-        const passwordInput = document.getElementById('password');
-
-        if (toggleText) {
-            toggleText.addEventListener('click', () => {
-                const isLogin = authForm.dataset.mode !== 'register';
-                if (isLogin) {
-                    authForm.dataset.mode = 'register';
-                    authTitle.textContent = 'Create Account';
-                    nameField.style.display = 'block';
-                    submitBtn.textContent = 'Sign Up';
-                    googleAuthBtn.querySelector('span').textContent = 'Sign up with Google';
-                    toggleText.textContent = 'Already have an account? Sign in.';
-                    passwordInput.autocomplete = 'new-password';
-                } else {
-                    authForm.dataset.mode = 'login';
-                    authTitle.textContent = 'Welcome Back';
-                    nameField.style.display = 'none';
-                    submitBtn.textContent = 'Sign In';
-                    googleAuthBtn.querySelector('span').textContent = 'Sign in with Google';
-                    toggleText.textContent = 'No account? Create one.';
-                    passwordInput.autocomplete = 'current-password';
-                }
-            });
-        }
-    </script>
     <script src="../js/pwa.js"></script>
     <script>
         /**
