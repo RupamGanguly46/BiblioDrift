@@ -32,6 +32,12 @@ class TestEnvironmentValidation:
         os.environ.clear()
         os.environ.update(original_env)
 
+    @pytest.fixture(autouse=True)
+    def mock_load_dotenv(self):
+        """Prevent load_dotenv from loading real .env files during tests."""
+        with mock.patch('dotenv.load_dotenv') as m:
+            yield m
+
     def test_validate_required_env_vars_success(self):
         """
         Test Case 1: App starts successfully when all required variables are set.
@@ -45,8 +51,9 @@ class TestEnvironmentValidation:
         
         # Import config module (will create app_config)
         # We need to reload the config module to pick up the new environment
-        if 'config' in sys.modules:
-            del sys.modules['config']
+        for m in ['config', 'backend.config']:
+            if m in sys.modules:
+                del sys.modules[m]
         
         from config import validate_required_env_vars
         
@@ -67,8 +74,9 @@ class TestEnvironmentValidation:
         os.environ['GOOGLE_BOOKS_API_KEY'] = 'test-key'
         os.environ['DATABASE_URL'] = 'sqlite:///test.db'
         
-        if 'config' in sys.modules:
-            del sys.modules['config']
+        for m in ['config', 'backend.config']:
+            if m in sys.modules:
+                del sys.modules[m]
         
         from config import validate_required_env_vars
         
@@ -89,8 +97,9 @@ class TestEnvironmentValidation:
         os.environ.pop('GOOGLE_BOOKS_API_KEY', None)
         os.environ['DATABASE_URL'] = 'sqlite:///test.db'
         
-        if 'config' in sys.modules:
-            del sys.modules['config']
+        for m in ['config', 'backend.config']:
+            if m in sys.modules:
+                del sys.modules[m]
         
         from config import validate_required_env_vars
         
@@ -111,8 +120,9 @@ class TestEnvironmentValidation:
         os.environ['GOOGLE_BOOKS_API_KEY'] = 'test-key'
         os.environ.pop('DATABASE_URL', None)
         
-        if 'config' in sys.modules:
-            del sys.modules['config']
+        for m in ['config', 'backend.config']:
+            if m in sys.modules:
+                del sys.modules[m]
         
         from config import validate_required_env_vars
         
@@ -131,8 +141,9 @@ class TestEnvironmentValidation:
         os.environ['GOOGLE_BOOKS_API_KEY'] = 'your-google-books-api-key'
         os.environ['DATABASE_URL'] = 'sqlite:///test.db'
         
-        if 'config' in sys.modules:
-            del sys.modules['config']
+        for m in ['config', 'backend.config']:
+            if m in sys.modules:
+                del sys.modules[m]
         
         from config import validate_required_env_vars
         
@@ -156,8 +167,9 @@ class TestEnvironmentValidation:
         os.environ.pop('GOOGLE_BOOKS_API_KEY', None)
         os.environ['DATABASE_URL'] = 'sqlite:///test.db'
         
-        if 'config' in sys.modules:
-            del sys.modules['config']
+        for m in ['config', 'backend.config']:
+            if m in sys.modules:
+                del sys.modules[m]
         
         from config import validate_required_env_vars
         
@@ -181,8 +193,9 @@ class TestEnvironmentValidation:
         os.environ['GOOGLE_BOOKS_API_KEY'] = 'test-key'
         os.environ['DATABASE_URL'] = 'sqlite:///test.db'
         
-        if 'config' in sys.modules:
-            del sys.modules['config']
+        for m in ['config', 'backend.config']:
+            if m in sys.modules:
+                del sys.modules[m]
         
         from config import get_config
         config = get_config()
@@ -237,8 +250,9 @@ class TestEnvironmentValidationIntegration:
         os.environ['APP_ENV'] = 'testing'
         
         # Try to import config - should work
-        if 'config' in sys.modules:
-            del sys.modules['config']
+        for m in ['config', 'backend.config']:
+            if m in sys.modules:
+                del sys.modules[m]
         
         from config import validate_required_env_vars
         

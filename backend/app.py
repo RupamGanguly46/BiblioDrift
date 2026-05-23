@@ -32,8 +32,8 @@ from urllib.parse import urlencode
 
 import logging
 from datetime import datetime, timedelta, timezone
-from sanitizer import sanitize_payload
-from reader_identity.routes import reader_identity_bp
+from backend.sanitizer import sanitize_payload
+from backend.reader_identity.routes import reader_identity_bp
 
 FIREBASE_ADMIN_AVAILABLE = False
 try:
@@ -74,6 +74,8 @@ from validators import (
     SyncLibraryRequest,
     RegisterRequest,
     LoginRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
     SetGoalRequest,
     GetStatsRequest,
     CollectionRequest,
@@ -87,9 +89,15 @@ from validators import (
     validate_jwt_secret,
     is_production_mode
 )
+from password_reset_service import (
+    FORGOT_PASSWORD_MESSAGE,
+    request_password_reset,
+    reset_password_with_token,
+)
 from collections import defaultdict, deque
 from math import ceil
 from time import time
+from urllib.parse import quote
 from error_responses import (
     ErrorCodes, error_response, success_response,
     validation_error, missing_fields_error, invalid_json_error,
@@ -1891,6 +1899,91 @@ def logout():
     return resp, status
 
 
+@app.route('/api/v1/auth/forgot-password', methods=['POST'])
+@csrf.exempt
+@limiter.limit("5 per minute")
+def forgot_password():
+    """Request a password reset link (always returns a generic success message)."""
+    try:
+        data = request.get_json(silent=True)
+        if data is None:
+            return invalid_json_error()
+
+        is_valid, validated_data = validate_request(ForgotPasswordRequest, data)
+        if not is_valid:
+            return jsonify(validated_data), 400
+
+        plain_token = None
+        try:
+            plain_token = request_password_reset(validated_data.email)
+        except SQLAlchemyError as e:
+            logger.error("forgot-password database error: %s", e, exc_info=True)
+
+        response_data = {"message": FORGOT_PASSWORD_MESSAGE}
+
+        if plain_token and app_config.is_development():
+            frontend_base = os.getenv(
+                'FRONTEND_ORIGIN',
+                'http://127.0.0.1:5500',
+            ).rstrip('/')
+            response_data["reset_url"] = (
+                f"{frontend_base}/pages/auth.html?token={quote(plain_token)}"
+            )
+            logger.info(
+                "Dev password reset link for %s: %s",
+                validated_data.email,
+                response_data["reset_url"],
+            )
+
+        return success_response(data=response_data)
+    except Exception as e:
+        logger.error("forgot-password failed: %s", e, exc_info=True)
+        return success_response(data={"message": FORGOT_PASSWORD_MESSAGE})
+
+
+@app.route('/api/v1/auth/reset-password', methods=['POST'])
+@csrf.exempt
+@limiter.limit("5 per minute")
+def reset_password():
+    """Set a new password using a valid reset token."""
+    try:
+        data = request.get_json(silent=True)
+        if data is None:
+            return invalid_json_error()
+
+        is_valid, validated_data = validate_request(ResetPasswordRequest, data)
+        if not is_valid:
+            return jsonify(validated_data), 400
+
+        ok, message = reset_password_with_token(
+            validated_data.token,
+            validated_data.password,
+        )
+        if not ok:
+            return jsonify({"error": message}), 400
+
+        return success_response(data={"message": message})
+    except Exception as e:
+        logger.error("reset-password failed: %s", e, exc_info=True)
+        return internal_error("Unable to reset password.")
+
+
+@app.route('/api/v1/auth/verify', methods=['GET'])
+@jwt_required()
+def verify_auth_session():
+    """Validate JWT from access cookie and return the current user (session restore)."""
+    try:
+        uid = get_jwt_identity()
+        user = User.query.get(int(uid))
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({
+            "user": {"id": user.id, "username": user.username, "email": user.email}
+        }), 200
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid session"}), 401
+
+
 # ==================== READING STATS ENDPOINTS ====================
 @app.route('/api/v1/stats/goal', methods=['POST'])
 @jwt_required()
@@ -2541,20 +2634,9 @@ def delete_price_alert(alert_id):
 with app.app_context():
     db.create_all()
 
-@app.route('/api/books', methods=['GET'])
-def get_books():
-    query = request.args.get('q')
-    max_results = request.args.get('maxResults', 10)
-
-    API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY")
-    url = f"https://www.googleapis.com/books/v1/volumes?q={query}&maxResults={max_results}&key={API_KEY}"
-
-    try:
-        response = requests.get(url)
-        data = response.json()
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({"error": "Failed to fetch books"}), 500
+# NOTE: Book search is performed directly from the frontend using the Google Books API.
+# The old backend proxy endpoint /api/books has been removed to avoid unnecessary
+# load on the backend server.
 
 if __name__ == '__main__':
     server_config = app_config.server
